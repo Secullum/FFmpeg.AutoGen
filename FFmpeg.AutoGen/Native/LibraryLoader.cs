@@ -23,7 +23,7 @@ namespace FFmpeg.AutoGen.Native
         /// </remarks>
         public static IntPtr LoadNativeLibraryUsingPlatformNamingConvention(string path, string libraryName, int version)
         {
-#if NET45
+#if NET45 || NET40
             var fullName = Path.Combine(path, $"{libraryName}-{version}.dll");
             return LoadNativeLibrary(fullName);
 #else
@@ -61,7 +61,7 @@ namespace FFmpeg.AutoGen.Native
         /// </remarks>
         public static IntPtr LoadNativeLibrary(string libraryName)
         {
-#if NET45
+#if NET45 || NET40
             return WindowsNativeMethods.LoadLibrary(libraryName);
 #else
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return WindowsNativeMethods.LoadLibrary(libraryName);
