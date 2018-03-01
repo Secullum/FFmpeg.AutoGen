@@ -14,6 +14,7 @@ namespace FFmpeg.AutoGen.Simple
         private int _streamIndex;
         private AVFrame* _pFrame;
         private AVPacket* _pPacket;
+        private AVIOInterruptCB_callback _interruptCallbackDelegate;
         private VideoFrameConverter _videoFrameConverter;
 
         public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
@@ -27,22 +28,20 @@ namespace FFmpeg.AutoGen.Simple
             ffmpeg.avformat_network_init();
         }
 
+        public VideoStreamDecoder()
+        {
+            _interruptCallbackDelegate = new AVIOInterruptCB_callback(InterruptCallback);
+        }
+        
         public void Start(string url)
         {
             _pFormatContext = ffmpeg.avformat_alloc_context();
-
-            AVIOInterruptCB_callback interrupt_callback = delegate
-            {
-                if (_connected) return 0;
-                if ((DateTime.Now - _initDate) > Timeout) return 1;
-                return 0;
-            };
 
             _pFormatContext->interrupt_callback = new AVIOInterruptCB()
             {
                 callback = new AVIOInterruptCB_callback_func()
                 {
-                    Pointer = Marshal.GetFunctionPointerForDelegate(interrupt_callback)
+                    Pointer = Marshal.GetFunctionPointerForDelegate(_interruptCallbackDelegate)
                 }
             };
 
@@ -159,6 +158,13 @@ namespace FFmpeg.AutoGen.Simple
             frame = *_pFrame;
 
             return true;
+        }
+
+        private int InterruptCallback(void* args)
+        {
+            if (_connected) return 0;
+            if ((DateTime.Now - _initDate) > Timeout) return 1;
+            return 0;
         }
     }
 }
