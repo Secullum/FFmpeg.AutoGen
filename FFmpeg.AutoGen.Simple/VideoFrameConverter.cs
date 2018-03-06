@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace FFmpeg.AutoGen.Simple
 {
-    public unsafe class VideoFrameConverter : IDisposable
+    internal unsafe class VideoFrameConverter : IDisposable
     {
         private IntPtr _convertedFrameBufferPtr;
         private Size _destinationSize;

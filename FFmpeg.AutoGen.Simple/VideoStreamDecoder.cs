@@ -99,8 +99,9 @@ namespace FFmpeg.AutoGen.Simple
             }
 
             var convertedFrame = _videoFrameConverter.Convert(frame);
+            var bitmap = new Bitmap(convertedFrame.width, convertedFrame.height, convertedFrame.linesize[0], PixelFormat.Format24bppRgb, (IntPtr)convertedFrame.data[0]);
 
-            return new Bitmap(convertedFrame.width, convertedFrame.height, convertedFrame.linesize[0], PixelFormat.Format24bppRgb, (IntPtr)convertedFrame.data[0]);
+            return bitmap.Clone() as Bitmap;
         }
 
         public void Stop()
