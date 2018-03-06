@@ -10,12 +10,17 @@ namespace FFmpeg.AutoGen.Simple
 
         public static void RegisterFFmpegBinaries()
         {
+            RegisterFFmpegBinaries(Environment.CurrentDirectory);
+        }
+
+        public static void RegisterFFmpegBinaries(string path)
+        {
             switch (Environment.OSVersion.Platform)
             {
                 case PlatformID.Win32NT:
                 case PlatformID.Win32S:
                 case PlatformID.Win32Windows:
-                    var current = Environment.CurrentDirectory;
+                    var current = path;
                     var probe = $"FFmpeg/bin/{(Environment.Is64BitProcess ? "x64" : "x86")}";
                     while (current != null)
                     {

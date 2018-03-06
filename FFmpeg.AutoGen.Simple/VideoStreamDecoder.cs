@@ -20,9 +20,21 @@ namespace FFmpeg.AutoGen.Simple
 
         public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
 
-        static VideoStreamDecoder()
+        public static void Initialize()
         {
-            FFmpegBinariesHelper.RegisterFFmpegBinaries();
+            Initialize(null);
+        }
+
+        public static void Initialize(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                FFmpegBinariesHelper.RegisterFFmpegBinaries();
+            }
+            else
+            {
+                FFmpegBinariesHelper.RegisterFFmpegBinaries(path);
+            }
 
             ffmpeg.av_register_all();
             ffmpeg.avcodec_register_all();
