@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace FFmpeg.AutoGen.Simple
@@ -100,8 +101,12 @@ namespace FFmpeg.AutoGen.Simple
 
             var convertedFrame = _videoFrameConverter.Convert(frame);
             var bitmap = new Bitmap(convertedFrame.width, convertedFrame.height, convertedFrame.linesize[0], PixelFormat.Format24bppRgb, (IntPtr)convertedFrame.data[0]);
+            var memoryStream = new MemoryStream();
 
-            return bitmap.Clone() as Bitmap;
+            bitmap.Save(memoryStream, ImageFormat.Jpeg);
+            memoryStream.Position = 0;
+
+            return new Bitmap(memoryStream);
         }
 
         public void Stop()
