@@ -9,6 +9,7 @@ namespace FFmpeg.AutoGen.Simple
     public unsafe class VideoStreamDecoder : IDisposable
     {
         private bool _connected = false;
+        private bool _cancel = false;
         private DateTime _initDate;
         private AVFormatContext* _pFormatContext;
         private AVCodecContext* _pCodecContext;
@@ -61,6 +62,7 @@ namespace FFmpeg.AutoGen.Simple
             var pFormatContext = _pFormatContext;
             _initDate = DateTime.Now;
             _connected = false;
+            _cancel = false;
             ffmpeg.avformat_open_input(&pFormatContext, url, null, null).ThrowExceptionIfError();
             _connected = true;
 
@@ -119,6 +121,11 @@ namespace FFmpeg.AutoGen.Simple
             memoryStream.Position = 0;
 
             return new Bitmap(memoryStream);
+        }
+
+        public void Cancel()
+        {
+            _cancel = true;
         }
 
         public void Stop()
@@ -180,6 +187,7 @@ namespace FFmpeg.AutoGen.Simple
 
         private int InterruptCallback(void* args)
         {
+            if (_cancel) return 1;
             if (_connected) return 0;
             if ((DateTime.Now - _initDate) > Timeout) return 1;
             return 0;
