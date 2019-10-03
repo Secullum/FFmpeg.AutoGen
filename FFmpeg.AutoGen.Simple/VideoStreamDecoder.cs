@@ -47,7 +47,7 @@ namespace FFmpeg.AutoGen.Simple
             _interruptCallbackDelegate = new AVIOInterruptCB_callback(InterruptCallback);
         }
         
-        public void Start(string url)
+        public void Start(string url, bool tcp = false)
         {
             _pFormatContext = ffmpeg.avformat_alloc_context();
 
@@ -63,7 +63,15 @@ namespace FFmpeg.AutoGen.Simple
             _initDate = DateTime.Now;
             _connected = false;
             _cancel = false;
-            ffmpeg.avformat_open_input(&pFormatContext, url, null, null).ThrowExceptionIfError();
+
+            AVDictionary* pOptions = null;
+
+            if (tcp)
+            {
+                ffmpeg.av_dict_set(&pOptions, "rtsp_transport", "tcp", 0);
+            }
+
+            ffmpeg.avformat_open_input(&pFormatContext, url, null, &pOptions).ThrowExceptionIfError();
             _connected = true;
 
             ffmpeg.avformat_find_stream_info(_pFormatContext, null).ThrowExceptionIfError();
