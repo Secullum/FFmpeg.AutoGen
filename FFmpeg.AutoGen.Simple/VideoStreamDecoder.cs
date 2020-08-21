@@ -18,6 +18,7 @@ namespace FFmpeg.AutoGen.Simple
         private AVPacket* _pPacket;
         private AVIOInterruptCB_callback _interruptCallbackDelegate;
         private VideoFrameConverter _videoFrameConverter;
+        private AVStream* _pStream;
 
         public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
 
@@ -70,30 +71,30 @@ namespace FFmpeg.AutoGen.Simple
             {
                 ffmpeg.av_dict_set(&pOptions, "rtsp_transport", "tcp", 0);
             }
-
+          
             ffmpeg.avformat_open_input(&pFormatContext, url, null, &pOptions).ThrowExceptionIfError();
             _connected = true;
 
             ffmpeg.avformat_find_stream_info(_pFormatContext, null).ThrowExceptionIfError();
 
-            AVStream* pStream = null;
+            _pStream = null;
 
             for (var i = 0; i < _pFormatContext->nb_streams; i++)
             {
                 if (_pFormatContext->streams[i]->codec->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO)
                 {
-                    pStream = _pFormatContext->streams[i];
+                    _pStream = _pFormatContext->streams[i];
                     break;
                 }
             }
 
-            if (pStream == null)
+            if (_pStream == null)
             {
-                throw new InvalidOperationException("Could not found video stream.");
+                throw new InvalidOperationException("Could not find video stream.");
             }
 
-            _streamIndex = pStream->index;
-            _pCodecContext = pStream->codec;
+            _streamIndex = _pStream->index;
+            _pCodecContext = _pStream->codec;
 
             var codecId = _pCodecContext->codec_id;
             var pCodec = ffmpeg.avcodec_find_decoder(codecId);
@@ -155,6 +156,20 @@ namespace FFmpeg.AutoGen.Simple
         {
             Stop();
         }
+
+        public Size GetVideoDimensions() => new Size(_pCodecContext->width, _pCodecContext->height);
+
+        public AVCodecID GetVideoCodecId() => _pCodecContext->codec_id;
+
+        public VideoStreamConverter GetStreamConverter(string name)
+        {
+            return new VideoStreamConverter(new Size(1024, 768), AVCodecID.AV_CODEC_ID_H264, 8, 30, name);
+        }
+
+        //public void TesteNeh()
+        //{
+        //    _videoFrameConverter.Convert(new Size(1024, 768), AVCodecID.AV_CODEC_ID_H264, 4, 30, "testonho.mp4");
+        //}
 
         private bool TryDecodeNextFrame(out AVFrame frame)
         {
