@@ -47,7 +47,7 @@ namespace FFmpeg.AutoGen.Simple
         {
             _interruptCallbackDelegate = new AVIOInterruptCB_callback(InterruptCallback);
         }
-        
+
         public void Start(string url, bool tcp = false)
         {
             _pFormatContext = ffmpeg.avformat_alloc_context();
@@ -71,7 +71,7 @@ namespace FFmpeg.AutoGen.Simple
             {
                 ffmpeg.av_dict_set(&pOptions, "rtsp_transport", "tcp", 0);
             }
-          
+
             ffmpeg.avformat_open_input(&pFormatContext, url, null, &pOptions).ThrowExceptionIfError();
             _connected = true;
 
@@ -156,20 +156,6 @@ namespace FFmpeg.AutoGen.Simple
         {
             Stop();
         }
-
-        public Size GetVideoDimensions() => new Size(_pCodecContext->width, _pCodecContext->height);
-
-        public AVCodecID GetVideoCodecId() => _pCodecContext->codec_id;
-
-        public VideoStreamConverter GetStreamConverter(string name)
-        {
-            return new VideoStreamConverter(new Size(1024, 768), AVCodecID.AV_CODEC_ID_H264, 8, 30, name);
-        }
-
-        //public void TesteNeh()
-        //{
-        //    _videoFrameConverter.Convert(new Size(1024, 768), AVCodecID.AV_CODEC_ID_H264, 4, 30, "testonho.mp4");
-        //}
 
         private bool TryDecodeNextFrame(out AVFrame frame)
         {
