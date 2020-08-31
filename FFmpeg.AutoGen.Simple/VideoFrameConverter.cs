@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace FFmpeg.AutoGen.Simple
 {
-    public unsafe class VideoFrameConverter : IDisposable
+    internal unsafe class VideoFrameConverter : IDisposable
     {
         private IntPtr _convertedFrameBufferPtr;
         private Size _destinationSize;
@@ -48,11 +48,16 @@ namespace FFmpeg.AutoGen.Simple
                 height = _destinationSize.Height
             };
         }
-      
+
         public void Dispose()
         {
             Marshal.FreeHGlobal(_convertedFrameBufferPtr);
             ffmpeg.sws_freeContext(_pConvertContext);
+
+            for (uint i = 0; i < 4; i++)
+            {
+                _dstData[i] = null;
+            }
         }
     }
 }

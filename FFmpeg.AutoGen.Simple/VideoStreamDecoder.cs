@@ -18,7 +18,6 @@ namespace FFmpeg.AutoGen.Simple
         private AVPacket* _pPacket;
         private AVIOInterruptCB_callback _interruptCallbackDelegate;
         private VideoFrameConverter _videoFrameConverter;
-        private AVStream* _pStream;
 
         public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(5);
 
@@ -47,7 +46,7 @@ namespace FFmpeg.AutoGen.Simple
         {
             _interruptCallbackDelegate = new AVIOInterruptCB_callback(InterruptCallback);
         }
-
+        
         public void Start(string url, bool tcp = false)
         {
             _pFormatContext = ffmpeg.avformat_alloc_context();
@@ -77,24 +76,24 @@ namespace FFmpeg.AutoGen.Simple
 
             ffmpeg.avformat_find_stream_info(_pFormatContext, null).ThrowExceptionIfError();
 
-            _pStream = null;
+            AVStream* pStream = null;
 
             for (var i = 0; i < _pFormatContext->nb_streams; i++)
             {
                 if (_pFormatContext->streams[i]->codec->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO)
                 {
-                    _pStream = _pFormatContext->streams[i];
+                    pStream = _pFormatContext->streams[i];
                     break;
                 }
             }
 
-            if (_pStream == null)
+            if (pStream == null)
             {
-                throw new InvalidOperationException("Could not find video stream.");
+                throw new InvalidOperationException("Could not found video stream.");
             }
 
-            _streamIndex = _pStream->index;
-            _pCodecContext = _pStream->codec;
+            _streamIndex = pStream->index;
+            _pCodecContext = pStream->codec;
 
             var codecId = _pCodecContext->codec_id;
             var pCodec = ffmpeg.avcodec_find_decoder(codecId);

@@ -5,15 +5,9 @@ namespace FFmpeg.AutoGen.Simple
 {
     internal static class FFmpegErrorHelper
     {
-        public static int ThrowExceptionIfError(this int error, Action cleanupAction = null)
+        public static int ThrowExceptionIfError(this int error)
         {
-            if (error < 0)
-            {
-                cleanupAction?.Invoke();
-
-                throw new ApplicationException(av_strerror(error));
-            }
-
+            if (error < 0) throw new ApplicationException(av_strerror(error));
             return error;
         }
 
