@@ -48,6 +48,7 @@ namespace FFmpeg.AutoGen.Simple
         private AVFrame* _pReusableFrame;
         private AVPacket* _pReusablePacket;
         private IntPtr _pInternalBuffer;
+        private GCHandle _pStreamPtr;
         private int _frameCount = 0;
 
         public VideoStreamConverter(Size destSize, string inputName)
@@ -72,6 +73,8 @@ namespace FFmpeg.AutoGen.Simple
             {
                 _converter.Dispose();
             }
+
+            _pStreamPtr.Free();
 
             Marshal.FreeHGlobal(_pInternalBuffer);
 
@@ -145,6 +148,7 @@ namespace FFmpeg.AutoGen.Simple
             var mediaType = AVMediaType.AVMEDIA_TYPE_UNKNOWN;
             var gotResult = 0;
             var streamIndex = 0;
+            var ret = 0;
 
             OpenOutputFile(shouldResize);
 
@@ -157,50 +161,42 @@ namespace FFmpeg.AutoGen.Simple
             {
                 streamIndex = _pReusablePacket->stream_index;
 
+                var decoderCtx = _StreamsContextArr[streamIndex].DecoderContext;
                 var inputStream = _pInputFmtCtx->streams[streamIndex];
                 mediaType = inputStream->codecpar->codec_type;
 
-                if (mediaType == AVMediaType.AVMEDIA_TYPE_VIDEO)
+                ffmpeg.av_packet_rescale_ts(_pReusablePacket,
+                    inputStream->time_base,
+                    decoderCtx->time_base);
+
+                ret = mediaType == AVMediaType.AVMEDIA_TYPE_VIDEO ?
+                    ffmpeg.avcodec_decode_video2(decoderCtx, _pReusableFrame, &gotResult, _pReusablePacket) :
+                    ffmpeg.avcodec_decode_audio4(decoderCtx, _pReusableFrame, &gotResult, _pReusablePacket);
+
+                if (ret < 0)
                 {
-                    ffmpeg.av_packet_rescale_ts(_pReusablePacket,
-                        inputStream->time_base,
-                        _StreamsContextArr[streamIndex].DecoderContext->time_base);
-
-                    if (ffmpeg.avcodec_decode_video2(_StreamsContextArr[streamIndex].DecoderContext, _pReusableFrame, &gotResult, _pReusablePacket) < 0)
-                    {
-                        throw new Exception("Decoding error");
-                    }
-
-                    if (gotResult != 0)
+                    throw new Exception("Decoding error");
+                }
+                else if (gotResult != 0)
+                {
+                    if (mediaType == AVMediaType.AVMEDIA_TYPE_VIDEO)
                     {
                         if (shouldResize)
                         {
                             *_pReusableFrame = _converter.Convert(*_pReusableFrame);
                         }
-
-                        _pReusableFrame->pts = _frameCount++;
-
-                        if (EncodeWriteFrame(streamIndex, &gotResult) < 0)
-                        {
-                            throw new Exception("Encoding error");
-                        }
                     }
-                }
-                else
-                {
-                    ffmpeg.av_packet_rescale_ts(_pReusablePacket,
-                        inputStream->time_base,
-                        _pOutputFmCtx->streams[streamIndex]->time_base);
 
-                    ffmpeg.av_interleaved_write_frame(_pOutputFmCtx, _pReusablePacket).ThrowExceptionIfError();
+                    _pReusableFrame->pts = _frameCount++;
 
-                    FreePacket();
+                    EncodeWriteFrame(streamIndex, &gotResult).ThrowExceptionIfError();
                 }
+
+                FreeFrame();
+                FreePacket();
             }
 
-            var videoStreamsCount = _StreamsContextArr.Count(x => x.DecoderContext->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO);
-
-            for (var i = 0; i < videoStreamsCount; i++)
+            for (var i = 0; i < _StreamsContextArr.Length; i++)
             {
                 FlushEncoder(i).ThrowExceptionIfError();
             }
@@ -285,6 +281,7 @@ namespace FFmpeg.AutoGen.Simple
                 filename = (byte*)emptyBytePtr,
             };
 
+            pCtx->probesize = 120 * 1000;
             pCtx->iformat = ffmpeg.av_probe_input_format(&probeData, 1);
             pCtx->flags |= ffmpeg.AVFMT_FLAG_CUSTOM_IO;
 
@@ -340,7 +337,7 @@ namespace FFmpeg.AutoGen.Simple
             }
         }
 
-        public void OpenOutputFile(bool shouldResize)
+        private void OpenOutputFile(bool shouldResize)
         {
             AVStream* outStream;
             AVStream* inStream;
@@ -377,7 +374,7 @@ namespace FFmpeg.AutoGen.Simple
                     }
                     else
                     {
-                        encoder = ffmpeg.avcodec_find_encoder(decoderCtx->codec_id);
+                        encoder = ffmpeg.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_AAC);
                     }
 
                     if (encoder == null)
@@ -426,14 +423,20 @@ namespace FFmpeg.AutoGen.Simple
 
                         ffmpeg.av_opt_set(encoderCtx->priv_data, "crf", "30", ffmpeg.AV_OPT_SEARCH_CHILDREN);
                         ffmpeg.av_opt_set(encoderCtx->priv_data, "preset", "veryfast", ffmpeg.AV_OPT_SEARCH_CHILDREN);
-
-                        ConfigureEncoderSpecificSettings(encoderCtx);
                     }
                     else
                     {
+                        var chnlLayout = decoderCtx->channel_layout;
+
+                        if (chnlLayout == 0)
+                        {
+                            chnlLayout = (ulong)ffmpeg.av_get_default_channel_layout(decoderCtx->channels);
+                        }
+
                         encoderCtx->sample_rate = decoderCtx->sample_rate;
-                        encoderCtx->channel_layout = decoderCtx->channel_layout;
-                        encoderCtx->channels = ffmpeg.av_get_channel_layout_nb_channels(encoderCtx->channel_layout);
+                        encoderCtx->bit_rate = 48 * 2000;
+                        encoderCtx->channel_layout = chnlLayout;
+                        encoderCtx->channels = ffmpeg.av_get_channel_layout_nb_channels(chnlLayout);
                         encoderCtx->sample_fmt = encoder->sample_fmts[0];
                         encoderCtx->time_base = new AVRational
                         {
@@ -441,6 +444,8 @@ namespace FFmpeg.AutoGen.Simple
                             den = encoderCtx->sample_rate
                         };
                     }
+
+                    ConfigureEncoderSpecificSettings(encoderCtx);
 
                     if ((_pOutputFmCtx->oformat->flags & ffmpeg.AVFMT_GLOBALHEADER) != 0)
                     {
@@ -464,6 +469,9 @@ namespace FFmpeg.AutoGen.Simple
 
                     outStream->time_base = inStream->time_base;
                 }
+
+                encoderCtx = null;
+                encoder = null;
             }
 
             AVDictionary* options;
@@ -490,9 +498,14 @@ namespace FFmpeg.AutoGen.Simple
             _pReusablePacket->data = null;
             _pReusablePacket->size = 0;
 
-            var streamEncCtx = _StreamsContextArr[streamIndex].EncoderContext;
+            var stream = _StreamsContextArr[streamIndex];
 
-            ret = ffmpeg.avcodec_encode_video2(streamEncCtx, _pReusablePacket, flush ? null : _pReusableFrame, &gotPacket);
+            var streamEncCtx = stream.EncoderContext;
+            var streamType = streamEncCtx->codec_type;
+
+            ret = streamType == AVMediaType.AVMEDIA_TYPE_VIDEO ?
+                ffmpeg.avcodec_encode_video2(streamEncCtx, _pReusablePacket, flush ? null : _pReusableFrame, &gotPacket) :
+                ffmpeg.avcodec_encode_audio2(streamEncCtx, _pReusablePacket, flush ? null : _pReusableFrame, &gotPacket);
 
             if (ret < 0)
             {
@@ -581,26 +594,17 @@ namespace FFmpeg.AutoGen.Simple
 
         private bool ArrPtrContains(int* arr, int value)
         {
-            if (arr == null)
+            while (arr != null && *arr != -1)
             {
-                return false;
-            }
-
-            int? curr = 0;
-
-            while (true)
-            {
-                curr = *(arr + curr.Value);
-
-                if (curr == null || curr == -1)
-                {
-                    return false;
-                }
-                else if (curr == value)
+                if (*arr == value)
                 {
                     return true;
                 }
+
+                arr++;
             }
+
+            return false;
         }
 
         private void CopyToBytePtr(Stream data, byte* buffer, int bufferLen)
