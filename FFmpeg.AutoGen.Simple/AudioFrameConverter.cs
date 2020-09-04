@@ -25,10 +25,9 @@ namespace FFmpeg.AutoGen.Simple
             ffmpeg.avfilter_free(_pBufferSinkCtx);
             ffmpeg.avfilter_free(_pBufferSrcCtx);
 
-            fixed (AVFilterGraph** ptr = &_pFilterGraph)
-            {
-                ffmpeg.avfilter_graph_free(ptr);
-            }
+            var filterGraph = _pFilterGraph;
+            ffmpeg.avfilter_graph_free(&filterGraph);
+            _pFilterGraph = null;
         }
 
         public int Convert(AVFrame* frame, Func<AVFrame, int> writeFunc)
@@ -51,7 +50,7 @@ namespace FFmpeg.AutoGen.Simple
 
                 if (ret < 0)
                 {
-                    if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN) || ret == ffmpeg.AVERROR_EOF)
+                    if (ret == -ffmpeg.EAGAIN || ret == ffmpeg.AVERROR_EOF)
                     {
                         ret = 0;
                     }
@@ -77,65 +76,75 @@ namespace FFmpeg.AutoGen.Simple
 
         private void InitFilters()
         {
-            var encoderSampleFmt = ffmpeg.av_get_sample_fmt_name(_pOutCtx->sample_fmt);
-            var outFilter = $"aresample={_pOutCtx->sample_rate},aformat=sample_fmts={encoderSampleFmt}:" +
-                $"channel_layouts=stereo,asetnsamples=n={_pOutCtx->frame_size}:p=0";
+            var outputs = ffmpeg.avfilter_inout_alloc();
+            var inputs = ffmpeg.avfilter_inout_alloc();
 
-            string args;
-            AVFilter* abuffersrc = ffmpeg.avfilter_get_by_name("abuffer");
-            AVFilter* abuffersink = ffmpeg.avfilter_get_by_name("abuffersink");
-            AVFilterInOut* outputs = ffmpeg.avfilter_inout_alloc();
-            AVFilterInOut* inputs = ffmpeg.avfilter_inout_alloc();
-            _pFilterGraph = ffmpeg.avfilter_graph_alloc();
-
-            if (outputs == null || inputs == null || _pFilterGraph == null || abuffersrc == null || abuffersink == null)
+            try
             {
-                throw new Exception("Could not allocate filter resources");
-            }
+                var encoderSampleFmt = ffmpeg.av_get_sample_fmt_name(_pOutCtx->sample_fmt);
+                var outFilter = $"aresample={_pOutCtx->sample_rate},aformat=sample_fmts={encoderSampleFmt}:" +
+                    $"channel_layouts=stereo,asetnsamples=n={_pOutCtx->frame_size}:p=0";
 
-            if (_pInCtx->channel_layout == 0)
+                var args = "";
+                var abuffersrc = ffmpeg.avfilter_get_by_name("abuffer");
+                var abuffersink = ffmpeg.avfilter_get_by_name("abuffersink");
+
+                _pFilterGraph = ffmpeg.avfilter_graph_alloc();
+
+                if (outputs == null || inputs == null || _pFilterGraph == null || abuffersrc == null || abuffersink == null)
+                {
+                    throw new Exception("Could not allocate filter resources");
+                }
+
+                if (_pInCtx->channel_layout == 0)
+                {
+                    _pInCtx->channel_layout = (ulong)ffmpeg.av_get_default_channel_layout(_pInCtx->channels);
+                }
+
+                args = string.Format("time_base={0}/{1}:sample_rate={2}:sample_fmt={3}:channel_layout=0x{4:X}",
+                            _pInCtx->time_base.num, _pInCtx->time_base.den, _pInCtx->sample_rate,
+                            ffmpeg.av_get_sample_fmt_name(_pInCtx->sample_fmt),
+                            _pInCtx->channel_layout);
+
+                fixed (AVFilterContext** ptr = &_pBufferSrcCtx)
+                {
+                    ffmpeg.avfilter_graph_create_filter(ptr, abuffersrc, "in", args, null, _pFilterGraph).ThrowExceptionIfError();
+                }
+
+                fixed (AVFilterContext** ptr = &_pBufferSinkCtx)
+                {
+                    ffmpeg.avfilter_graph_create_filter(ptr, abuffersink, "out", null, null, _pFilterGraph).ThrowExceptionIfError();
+                }
+
+                ffmpeg.av_opt_set_bin(_pBufferSinkCtx, "sample_fmts", (byte*)&_pOutCtx->sample_fmt, sizeof(AVSampleFormat),
+                    ffmpeg.AV_OPT_SEARCH_CHILDREN).ThrowExceptionIfError();
+
+                ffmpeg.av_opt_set_bin(_pBufferSinkCtx, "channel_layouts", (byte*)&_pOutCtx->channel_layout, sizeof(ulong),
+                    ffmpeg.AV_OPT_SEARCH_CHILDREN);
+
+                ffmpeg.av_opt_set_bin(_pBufferSinkCtx, "sample_rates", (byte*)&_pOutCtx->sample_rate, sizeof(int),
+                    ffmpeg.AV_OPT_SEARCH_CHILDREN);
+
+                outputs->name = ffmpeg.av_strdup("in");
+                outputs->filter_ctx = _pBufferSrcCtx;
+                outputs->pad_idx = 0;
+                outputs->next = null;
+
+                inputs->name = ffmpeg.av_strdup("out");
+                inputs->filter_ctx = _pBufferSinkCtx;
+                inputs->pad_idx = 0;
+                inputs->next = null;
+
+                ffmpeg.avfilter_graph_parse_ptr(_pFilterGraph, outFilter,
+                                                &inputs, &outputs, null).ThrowExceptionIfError();
+
+                ffmpeg.avfilter_graph_config(_pFilterGraph, null).ThrowExceptionIfError();
+            }
+            finally
             {
-                _pInCtx->channel_layout = (ulong)ffmpeg.av_get_default_channel_layout(_pInCtx->channels);
+                ffmpeg.avfilter_inout_free(&inputs);
+                ffmpeg.avfilter_inout_free(&outputs);
             }
-
-            args = string.Format("time_base={0}/{1}:sample_rate={2}:sample_fmt={3}:channel_layout=0x{4:X}",
-                        _pInCtx->time_base.num, _pInCtx->time_base.den, _pInCtx->sample_rate,
-                        ffmpeg.av_get_sample_fmt_name(_pInCtx->sample_fmt),
-                        _pInCtx->channel_layout);
-
-            fixed (AVFilterContext** ptr = &_pBufferSrcCtx)
-            {
-                ffmpeg.avfilter_graph_create_filter(ptr, abuffersrc, "in", args, null, _pFilterGraph).ThrowExceptionIfError();
-            }
-
-            fixed (AVFilterContext** ptr = &_pBufferSinkCtx)
-            {
-                ffmpeg.avfilter_graph_create_filter(ptr, abuffersink, "out", null, null, _pFilterGraph).ThrowExceptionIfError();
-            }
-
-            ffmpeg.av_opt_set_bin(_pBufferSinkCtx, "sample_fmts", (byte*)&_pOutCtx->sample_fmt, sizeof(AVSampleFormat),
-                ffmpeg.AV_OPT_SEARCH_CHILDREN).ThrowExceptionIfError();
-
-            ffmpeg.av_opt_set_bin(_pBufferSinkCtx, "channel_layouts", (byte*)&_pOutCtx->channel_layout, sizeof(ulong),
-                ffmpeg.AV_OPT_SEARCH_CHILDREN);
-
-            ffmpeg.av_opt_set_bin(_pBufferSinkCtx, "sample_rates", (byte*)&_pOutCtx->sample_rate, sizeof(int),
-                ffmpeg.AV_OPT_SEARCH_CHILDREN);
-
-            outputs->name = ffmpeg.av_strdup("in");
-            outputs->filter_ctx = _pBufferSrcCtx;
-            outputs->pad_idx = 0;
-            outputs->next = null;
-
-            inputs->name = ffmpeg.av_strdup("out");
-            inputs->filter_ctx = _pBufferSinkCtx;
-            inputs->pad_idx = 0;
-            inputs->next = null;
-
-            ffmpeg.avfilter_graph_parse_ptr(_pFilterGraph, outFilter,
-                                            &inputs, &outputs, null).ThrowExceptionIfError();
-
-            ffmpeg.avfilter_graph_config(_pFilterGraph, null).ThrowExceptionIfError();
         }
     }
 }

@@ -28,7 +28,6 @@ namespace FFmpeg.AutoGen.Simple
         }
 
         private const AVPixelFormat TARGET_PIX_FORMAT = AVPixelFormat.AV_PIX_FMT_YUV420P;
-        private readonly AVCodecID[] WMV_FORMATS = new AVCodecID[] { AVCodecID.AV_CODEC_ID_WMV1, AVCodecID.AV_CODEC_ID_WMV2, AVCodecID.AV_CODEC_ID_WMV3 };
 
         private Size _size;
         private string _outputName;
@@ -61,12 +60,18 @@ namespace FFmpeg.AutoGen.Simple
             if (_videoConverter != null)
             {
                 _videoConverter.Dispose();
+                _videoConverter = null;
             }
 
             if (_audioConverter != null)
             {
                 _audioConverter.Dispose();
+                _audioConverter = null;
             }
+
+            _outputName = null;
+            _inputName = null;
+            _validStreamIndexes = null;
 
             for (int i = 0; i < _StreamsContextArr.Length; i++)
             {
@@ -109,6 +114,23 @@ namespace FFmpeg.AutoGen.Simple
             {
                 FreeFrame(realloc: false);
             }
+
+            _StreamsContextArr = null;
+        }
+
+        public static void Initialize(string path = null)
+        {
+            if (string.IsNullOrEmpty(path))
+            {
+                FFmpegBinariesHelper.RegisterFFmpegBinaries();
+            }
+            else
+            {
+                FFmpegBinariesHelper.RegisterFFmpegBinaries(path);
+            }
+
+            ffmpeg.av_register_all();
+            ffmpeg.avcodec_register_all();
         }
 
         public List<StreamInfo> GetInputFileInfo()
@@ -460,7 +482,7 @@ namespace FFmpeg.AutoGen.Simple
             {
                 ffmpeg.avcodec_flush_buffers(streamEncCtx);
             }
-            else if (ret == ffmpeg.AVERROR(ffmpeg.EAGAIN))
+            else if (ret == -ffmpeg.EAGAIN)
             {
                 return 0;
             }
