@@ -8,9 +8,9 @@ namespace FFmpeg.AutoGen.Simple
     {
         private IntPtr _convertedFrameBufferPtr;
         private Size _destinationSize;
-        private byte_ptrArray4 _dstData;
-        private int_array4 _dstLinesize;
         private SwsContext* _pConvertContext;
+        private int[] _dstLinesize;
+        private byte*[] _dstData;
 
         public VideoFrameConverter(Size sourceSize, AVPixelFormat sourcePixelFormat, Size destinationSize, AVPixelFormat destinationPixelFormat)
         {
@@ -25,10 +25,20 @@ namespace FFmpeg.AutoGen.Simple
 
             var convertedFrameBufferSize = ffmpeg.av_image_get_buffer_size(destinationPixelFormat, destinationSize.Width, destinationSize.Height, 1);
             _convertedFrameBufferPtr = Marshal.AllocHGlobal(convertedFrameBufferSize);
-            _dstData = new byte_ptrArray4();
-            _dstLinesize = new int_array4();
+            var dstData = new byte_ptrArray4();
+            var dstLinesize = new int_array4();
 
-            ffmpeg.av_image_fill_arrays(ref _dstData, ref _dstLinesize, (byte*)_convertedFrameBufferPtr, destinationPixelFormat, destinationSize.Width, destinationSize.Height, 1);
+            ffmpeg.av_image_fill_arrays(ref dstData, ref dstLinesize, (byte*)_convertedFrameBufferPtr, destinationPixelFormat, destinationSize.Width, destinationSize.Height, 1);
+
+            _dstLinesize = dstLinesize.ToArray();
+            _dstData = dstData.ToArray();
+
+            for (uint i = 0; i < 4; i++)
+            {
+                dstData[i] = null;
+            }
+
+            ffmpeg.av_free(&dstLinesize);
         }
 
         public AVFrame Convert(AVFrame sourceFrame)
